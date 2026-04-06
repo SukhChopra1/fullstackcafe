@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Food Menu - FullStack Cafe</title>
     <link rel="stylesheet" href="/css/style.css">
     <style>
@@ -136,7 +137,6 @@
             align-items: center;
             gap: 15px;
             margin: 40px 0;
-            font-family: sans-serif;
         }
         .pag-btn {
             background: #f1f1f1;
@@ -145,30 +145,14 @@
             width: 45px;
             height: 45px;
             border-radius: 50%;
-            font-size: 1.5rem;
+            font-size: 1.2rem;
             font-weight: bold;
             cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             transition: all 0.3s ease;
         }
         .pag-btn:hover:not(:disabled) {
             background: #2a2929;
             color: #ffcc00;
-            border-color: #2a2929;
-            transform: scale(1.1);
-        }
-        .pag-btn:disabled {
-            opacity: 0.2;
-            cursor: not-allowed;
-        }
-        #page-info {
-            font-size: 1.3rem;
-            font-weight: 600;
-            color: #2a2929;
-            min-width: 60px;
-            text-align: center;
         }
     </style>
 </head>
@@ -205,10 +189,10 @@
 <div id="productModal" class="modal">
     <div class="modal-content">
         <span class="close-modal" onclick="closeModal()">&times;</span>
-        <img id="modal-img" src="" alt="" class="modal-img">
+        <img id="modal-img" src="" alt="" class="modal-img" onerror="this.src='https://placehold.co/400x300?text=Image+Not+Found'">
         <h2 id="modal-title">Product Name</h2>
         <p id="modal-description"></p>
-        <p id="modal-price" style="color: #e67e22; font-weight: bold; margin-bottom: 5px;"></p>
+        <p id="modal-price" style="color: #e67e22; font-weight: bold;"></p>
         <p id="modal-stock-status" style="font-size: 0.85rem; margin-bottom: 10px;"></p>
         
         <div class="quantity-controls" id="modal-qty-controls">
@@ -230,19 +214,22 @@
     let currentQty = 1;
     let maxStock = 0;
 
-    // ✅ FIXED: Better image path cleaning for Production/Render
+    // Fixed Image Pathing Logic
     function getCleanImagePath(img) {
-        if (!img) return 'https://via.placeholder.com/300?text=No+Image';
+        if (!img) return 'https://placehold.co/400x300?text=No+Image';
         if (img.startsWith('http')) return img;
         
-        // Remove backslashes and any existing leading slashes
-        let cleanName = img.replace(/\\/g, '/').replace(/^\/+/, '');
+        // Clean backslashes (Windows) to forward slashes (Linux/Web)
+        let cleanName = img.replace(/\\/g, '/');
         
-        // If the path doesn't already start with "uploads/", add it
-        let path = cleanName.startsWith('uploads/') ? cleanName : `uploads/${cleanName}`;
+        // Remove leading slashes to prevent double slashes
+        cleanName = cleanName.replace(/^\/+/, '');
         
-        // Ensure absolute path from root
-        return '/' + path.replace(/ /g, '%20');
+        // If the database didn't include "uploads/", add it
+        let fullPath = cleanName.startsWith('uploads/') ? cleanName : `uploads/${cleanName}`;
+        
+        // Return absolute path from root
+        return '/' + fullPath;
     }
 
     function renderPage() {
@@ -252,11 +239,9 @@
         
         const totalPages = Math.ceil(allItems.length / itemsPerPage) || 1;
         if (currentPage > totalPages) currentPage = totalPages;
-        if (currentPage < 1) currentPage = 1;
 
         const start = (currentPage - 1) * itemsPerPage;
-        const end = start + itemsPerPage;
-        const itemsToShow = allItems.slice(start, end);
+        const itemsToShow = allItems.slice(start, start + itemsPerPage);
 
         document.getElementById('prev-page-btn').disabled = (currentPage === 1);
         document.getElementById('next-page-btn').disabled = (currentPage === totalPages || allItems.length === 0);
@@ -273,7 +258,8 @@
         grid.innerHTML = itemsToShow.map(food => {
             const isSoldOut = food.stock <= 0;
             const imagePath = getCleanImagePath(food.image);
-            const sanitizedDesc = (food.description || "Fresh food.").replace(/`/g, "\\`").replace(/'/g, "\\'");
+            // Escape special chars in description for the onclick function
+            const safeDesc = (food.description || "Freshly made.").replace(/'/g, "\\'").replace(/"/g, "&quot;");
             
             return `
                 <div class="card" style="opacity: ${isSoldOut ? '0.7' : '1'}">
@@ -281,8 +267,8 @@
                          alt="${food.name}" 
                          class="food-img" 
                          loading="lazy"
-                         onerror="this.onerror=null; this.src='https://via.placeholder.com/300?text=Not+Found';"
-                         onclick="openProductModal('${food._id}', '${food.name}', '${food.price}', '${imagePath}', \`${sanitizedDesc}\`, ${food.stock})">
+                         onerror="this.onerror=null; this.src='https://placehold.co/400x300?text=Not+Found';"
+                         onclick="openProductModal('${food._id}', '${food.name.replace(/'/g, "\\'")}', '${food.price}', '${imagePath}', '${safeDesc}', ${food.stock})">
                     
                     <h3>${food.name}</h3>
                     <span class="stock-label" style="color: ${isSoldOut ? '#ff4d4d' : '#2ecc71'}">
@@ -318,14 +304,7 @@
         
         document.getElementById('modal-title').innerText = name;
         document.getElementById('modal-price').innerText = `₹ ${price}`;
-        
-        const modalImg = document.getElementById('modal-img');
-        modalImg.onerror = function() {
-            this.onerror = null;
-            this.src = 'https://via.placeholder.com/300?text=No+Image';
-        };
-        modalImg.src = image;
-        
+        document.getElementById('modal-img').src = image;
         document.getElementById('modal-qty').innerText = currentQty;
         document.getElementById('modal-description').innerText = description;
         
@@ -417,14 +396,12 @@
     });
 
     window.addEventListener('click', (e) => {
-        const modal = document.getElementById('productModal');
-        if (e.target === modal) closeModal();
+        if (e.target === document.getElementById('productModal')) closeModal();
     });
 
-    document.addEventListener('DOMContentLoaded', () => {
-        renderPage();
-    });
+    document.addEventListener('DOMContentLoaded', renderPage);
 </script>
+
 <%- include('partials/footer') %>
 </body>
 </html>

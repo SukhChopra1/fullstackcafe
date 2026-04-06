@@ -53,11 +53,10 @@ coverage/
 # ==============================
 # Uploads (FIXED FOR RENDER)
 # ==============================
-# We stop ignoring the folders so they exist on Render.
-# But we ignore the actual images inside to keep the repo small.
-!public/
-!public/uploads/
+# 1. Ignore everything inside the uploads folder
 public/uploads/*
+
+# 2. But DO NOT ignore the .gitkeep file (this forces the folder to exist)
 !public/uploads/.gitkeep
 
 # ==============================
