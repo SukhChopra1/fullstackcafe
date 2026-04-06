@@ -205,7 +205,7 @@
 <div id="productModal" class="modal">
     <div class="modal-content">
         <span class="close-modal" onclick="closeModal()">&times;</span>
-        <img id="modal-img" src="" alt="" class="modal-img" onerror="this.onerror=null; this.src='https://via.placeholder.com/300?text=No+Image';">
+        <img id="modal-img" src="" alt="" class="modal-img">
         <h2 id="modal-title">Product Name</h2>
         <p id="modal-description"></p>
         <p id="modal-price" style="color: #e67e22; font-weight: bold; margin-bottom: 5px;"></p>
@@ -223,7 +223,6 @@
 <div id="toast-container"></div>
 
 <script>
-    // Data passed from EJS
     const allItems = <%- JSON.stringify(foodItems || []) %>;
     const itemsPerPage = 8; 
     let currentPage = 1;
@@ -231,20 +230,21 @@
     let currentQty = 1;
     let maxStock = 0;
 
-    // Helper for image paths
+    // ✅ FIXED: Better image path cleaning for Production/Render
     function getCleanImagePath(img) {
         if (!img) return 'https://via.placeholder.com/300?text=No+Image';
         if (img.startsWith('http')) return img;
         
-        // Ensure path starts with /uploads/
-        let path = img.includes('uploads/') ? img : `/uploads/${img}`;
-        if (!path.startsWith('/')) path = '/' + path;
+        // Remove backslashes and any existing leading slashes
+        let cleanName = img.replace(/\\/g, '/').replace(/^\/+/, '');
         
-        // Encode spaces properly for the browser
-        return path.replace(/ /g, '%20');
+        // If the path doesn't already start with "uploads/", add it
+        let path = cleanName.startsWith('uploads/') ? cleanName : `uploads/${cleanName}`;
+        
+        // Ensure absolute path from root
+        return '/' + path.replace(/ /g, '%20');
     }
 
-    // Main Render Function
     function renderPage() {
         const grid = document.getElementById('food-items-grid');
         const pageInfo = document.getElementById('page-info');
@@ -273,7 +273,7 @@
         grid.innerHTML = itemsToShow.map(food => {
             const isSoldOut = food.stock <= 0;
             const imagePath = getCleanImagePath(food.image);
-            const sanitizedDesc = (food.description || "Delicious freshly prepared food.").replace(/`/g, "\\`").replace(/'/g, "\\'");
+            const sanitizedDesc = (food.description || "Fresh food.").replace(/`/g, "\\`").replace(/'/g, "\\'");
             
             return `
                 <div class="card" style="opacity: ${isSoldOut ? '0.7' : '1'}">
@@ -281,14 +281,14 @@
                          alt="${food.name}" 
                          class="food-img" 
                          loading="lazy"
-                         onerror="this.onerror=null; this.src='https://via.placeholder.com/300?text=Image+Not+Found';"
+                         onerror="this.onerror=null; this.src='https://via.placeholder.com/300?text=Not+Found';"
                          onclick="openProductModal('${food._id}', '${food.name}', '${food.price}', '${imagePath}', \`${sanitizedDesc}\`, ${food.stock})">
                     
                     <h3>${food.name}</h3>
                     <span class="stock-label" style="color: ${isSoldOut ? '#ff4d4d' : '#2ecc71'}">
                         ${isSoldOut ? '🔴 SOLD OUT' : '🟢 In Stock'}
                     </span>
-                    <p class="food-description">${food.description || "Delicious freshly prepared food."}</p>
+                    <p class="food-description">${food.description || "Freshly prepared."}</p>
                     <p class="price">₹ ${food.price}</p>
                     <button class="add-to-cart-btn" 
                             onclick="handleAddToCart(this)"
@@ -311,7 +311,6 @@
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    // Modal Logic
     window.openProductModal = function(id, name, price, image, description, stock) {
         currentProduct = { id, name, price: parseFloat(price), image };
         currentQty = 1;
@@ -320,7 +319,6 @@
         document.getElementById('modal-title').innerText = name;
         document.getElementById('modal-price').innerText = `₹ ${price}`;
         
-        // Reset modal img error handler before setting src
         const modalImg = document.getElementById('modal-img');
         modalImg.onerror = function() {
             this.onerror = null;
@@ -359,7 +357,6 @@
         }
     };
 
-    // Cart Handlers
     window.handleAddToCart = (btn) => {
         const productData = {
             productId: btn.getAttribute('data-id'), 
@@ -384,9 +381,7 @@
         localStorage.setItem('cafe_cart', JSON.stringify(localCart));
         showToast(`✅ ${productData.name} added!`);
 
-        if (typeof window.updateCartBadge === 'function') {
-            window.updateCartBadge();
-        }
+        if (typeof window.updateCartBadge === 'function') window.updateCartBadge();
 
         try {
             await fetch('/products/sync', { 

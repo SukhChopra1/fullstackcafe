@@ -51,10 +51,14 @@ temp/
 coverage/
 
 # ==============================
-# Uploads (if storing user files)
+# Uploads (FIXED FOR RENDER)
 # ==============================
-uploads/
-public/uploads/
+# We stop ignoring the folders so they exist on Render.
+# But we ignore the actual images inside to keep the repo small.
+!public/
+!public/uploads/
+public/uploads/*
+!public/uploads/.gitkeep
 
 # ==============================
 # Cache
