@@ -3,10 +3,14 @@ const dotenv = require('dotenv');
 dotenv.config({ path: './.env' }); 
 
 const mongoose = require('mongoose');
-const Product = require('../models/Product'); 
+const Product = require('../models/product');
 
-// 2. Use process.env.MONGO_URI directly to avoid ReferenceErrors
-const MONGO_URI = process.env.MONGO_URI;
+// 2. Use process.env.MONGO_URI, fallback to local if not set
+const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/fullstackCafe";
+
+if (!process.env.MONGO_URI) {
+    console.warn("⚠️ MONGO_URI not defined; using local MongoDB fallback.");
+}
 
 const foodItems = [
     { name: "sahi panner with roti", price: 250, image: "/uploads/sahi panner with roti.jpeg", category: "meal", 

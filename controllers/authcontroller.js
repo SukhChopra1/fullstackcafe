@@ -11,43 +11,61 @@ const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
+        pass: process.env.EMAIL_PASS // Use a Google App Password here, not your regular password
+    }
+});
+
+// Verify connection configuration on startup
+transporter.verify((error, success) => {
+    if (error) {
+        console.error("📧 Mail Server Error:", error);
+    } else {
+        console.log("📧 Mail Server is ready");
     }
 });
 
 /* ================= HELPER: COMPLETE LOGIN PROCESS ================= */
 const proceedToLogin = async (user, req, res) => {
-    if (req.session.cart && req.session.cart.length > 0) {
-        let userCart = await Cart.findOne({ user: user._id });
-        if (!userCart) {
-            userCart = new Cart({ user: user._id, items: req.session.cart });
-        } else {
-            req.session.cart.forEach(sessionItem => {
-                const exist = userCart.items.find(item => item.name === sessionItem.name);
-                if (exist) exist.quantity += sessionItem.quantity;
-                else userCart.items.push(sessionItem);
-            });
+    try {
+        if (req.session.cart && req.session.cart.length > 0) {
+            let userCart = await Cart.findOne({ user: user._id });
+            if (!userCart) {
+                userCart = new Cart({ user: user._id, items: req.session.cart });
+            } else {
+                req.session.cart.forEach(sessionItem => {
+                    // Ensure items array exists
+                    if(!userCart.items) userCart.items = [];
+                    const exist = userCart.items.find(item => item.name === sessionItem.name);
+                    if (exist) {
+                        exist.quantity += sessionItem.quantity;
+                    } else {
+                        userCart.items.push(sessionItem);
+                    }
+                });
+            }
+            await userCart.save();
+            req.session.cart = []; // Clear session cart after merging
         }
-        await userCart.save();
-        req.session.cart = [];
+
+        const token = jwt.sign(
+            { id: user._id, role: user.role },
+            SECRET_KEY,
+            { expiresIn: "1d" }
+        );
+
+        res.cookie("token", token, {
+            httpOnly: true,
+            maxAge: 24 * 60 * 60 * 1000,
+            sameSite: "lax",
+            secure: process.env.NODE_ENV === "production"
+        });
+
+        const redirectUrl = user.role === "admin" ? "/admin/dashboard" : "/products";
+        return res.json({ success: true, redirectUrl });
+    } catch (err) {
+        console.error("Login Proceed Error:", err);
+        return res.status(500).json({ success: false, message: "Error during login processing." });
     }
-
-    /* ===== TOKEN ===== */
-    const token = jwt.sign(
-        { id: user._id, role: user.role },
-        SECRET_KEY,
-        { expiresIn: "1d" }
-    );
-
-    res.cookie("token", token, {
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production"
-    });
-
-    const redirectUrl = user.role === "admin" ? "/admin/dashboard" : "/products";
-    return res.json({ success: true, redirectUrl });
 };
 
 /* ================= 1. CHECK AUTH ================= */
@@ -140,18 +158,30 @@ const signup = async (req, res) => {
             isVerified: false
         });
 
+        // 1. Save user first
         await newUser.save();
 
-        await transporter.sendMail({
-            from: `"FullStack Cafe" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: "Verify your FullStack Cafe Account",
-            html: `<h3>Your OTP is: ${otp}</h3>`
-        });
-
-        res.json({ success: true, message: "OTP sent!", email });
+        // 2. Try sending mail
+        try {
+            await transporter.sendMail({
+                from: `"FullStack Cafe" <${process.env.EMAIL_USER}>`,
+                to: email,
+                subject: "Verify your FullStack Cafe Account",
+                html: `<h3>Your OTP is: ${otp}</h3>`
+            });
+            res.json({ success: true, message: "OTP sent!", email });
+        } catch (mailErr) {
+            console.error("❌ Mail Transport Error:", mailErr);
+            // If mail fails, we still created the user, but they can't verify.
+            // You might want to delete the user here or just tell them to "Resend OTP"
+            res.status(500).json({ 
+                success: false, 
+                message: "Account created, but failed to send OTP email. Please try 'Resend OTP'." 
+            });
+        }
 
     } catch (err) {
+        console.error("❌ Signup System Error:", err);
         res.status(500).json({ success: false, message: "Error creating account." });
     }
 };
@@ -160,6 +190,8 @@ const signup = async (req, res) => {
 const verifyOTP = async (req, res) => {
     try {
         const { email, otp } = req.body;
+        if(!email || !otp) return res.status(400).json({ success: false, message: "Email and OTP required." });
+
         const user = await User.findOne({ email: email.toLowerCase() });
 
         if (!user) return res.status(404).json({ success: false, message: "User not found." });
@@ -198,7 +230,7 @@ const resendOTP = async (req, res) => {
         await user.save();
 
         await transporter.sendMail({
-            from: `\"FullStack Cafe\" <${process.env.EMAIL_USER}>`,
+            from: `"FullStack Cafe" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: "Your new OTP code",
             html: `<h3>Your new OTP is: ${otp}</h3>`
@@ -211,7 +243,7 @@ const resendOTP = async (req, res) => {
     }
 };
 
-/* ================= 7. LOGIN (JSON RESPONSE FIXED) ================= */
+/* ================= 7. LOGIN ================= */
 const login = async (req, res) => {
     try {
         let { email, password } = req.body;
@@ -239,16 +271,15 @@ const login = async (req, res) => {
             });
         }
 
-        // --- REGULAR VERIFIED USER LOGIN ---
         return await proceedToLogin(user, req, res);
 
     } catch (err) {
-        console.error(err);
+        console.error("Login Error:", err);
         res.status(500).json({ success: false, message: "Login error occurred." });
     }
 };
 
-/* ================= 7. LOGOUT ================= */
+/* ================= 8. LOGOUT ================= */
 const logout = (req, res) => {
     res.clearCookie("token");
     res.redirect("/products");
